@@ -43,9 +43,9 @@ def combat(data, batch, model=None, numerical_covariates=None):
     data : pandas.DataFrame
         A (n_features, n_samples) dataframe of the expression or methylation
         data to batch correct
-    batch : List-like
-        A column corresponding to the batches in the data, in the same order
-        as the samples in ``data``
+    batch : pandas.Series
+        A column corresponding to the batches in the data, with index same as
+        the columns that appear in ``data``
     model : patsy.design_info.DesignMatrix, optional
         A model matrix describing metadata on the samples which could be
         causing batch effects. If not provided, then will attempt to coarsely
@@ -77,7 +77,7 @@ def combat(data, batch, model=None, numerical_covariates=None):
     n_array = float(sum(n_batches))
 
     # drop intercept
-    drop_cols = [cname for cname, inter in  ((model == 1).all()).iterkv() if inter == True]
+    drop_cols = [cname for cname, inter in  ((model == 1).all()).iteritems() if inter == True]
     drop_idxs = [list(model.columns).index(cdrop) for cdrop in drop_cols]
     model = model[[c for c in model.columns if not c in drop_cols]]
     numerical_covariates = [list(model.columns).index(c) if isinstance(c, str) else c
@@ -91,14 +91,14 @@ def combat(data, batch, model=None, numerical_covariates=None):
     sys.stderr.write("Standardizing Data across genes.\n")
     B_hat = np.dot(np.dot(la.inv(np.dot(design.T, design)), design.T), data.T)
     grand_mean = np.dot((n_batches / n_array).T, B_hat[:n_batch,:])
-    var_pooled = np.dot(((data - np.dot(design, B_hat).T)**2), np.ones((n_array, 1)) / n_array)
+    var_pooled = np.dot(((data - np.dot(design, B_hat).T)**2), np.ones((int(n_array), 1)) / int(n_array))
 
-    stand_mean = np.dot(grand_mean.T.reshape((len(grand_mean), 1)), np.ones((1, n_array)))
+    stand_mean = np.dot(grand_mean.T.reshape((len(grand_mean), 1)), np.ones((1, int(n_array))))
     tmp = np.array(design.copy())
     tmp[:,:n_batch] = 0
     stand_mean  += np.dot(tmp, B_hat).T
 
-    s_data = ((data - stand_mean) / np.dot(np.sqrt(var_pooled), np.ones((1, n_array))))
+    s_data = ((data - stand_mean) / np.dot(np.sqrt(var_pooled), np.ones((1, int(n_array)))))
 
     sys.stderr.write("Fitting L/S model and finding priors\n")
     batch_design = design[design.columns[:n_batch]]
@@ -140,12 +140,12 @@ def combat(data, batch, model=None, numerical_covariates=None):
         dsq = np.sqrt(delta_star[j,:])
         dsq = dsq.reshape((len(dsq), 1))
         denom =  np.dot(dsq, np.ones((1, n_batches[j])))
-        numer = np.array(bayesdata[batch_idxs] - np.dot(batch_design.ix[batch_idxs], gamma_star).T)
+        numer = np.array(bayesdata[batch_idxs] - np.dot(batch_design.loc[batch_idxs], gamma_star).T)
 
         bayesdata[batch_idxs] = numer / denom
    
     vpsq = np.sqrt(var_pooled).reshape((len(var_pooled), 1))
-    bayesdata = bayesdata * np.dot(vpsq, np.ones((1, n_array))) + stand_mean
+    bayesdata = bayesdata * np.dot(vpsq, np.ones((1, int(n_array)))) + stand_mean
  
     return bayesdata
 
@@ -159,7 +159,7 @@ def it_sol(sdat, g_hat, d_hat, g_bar, t2, a, b, conv=0.0001):
     while change > conv:
         #print g_hat.shape, g_bar.shape, t2.shape
         g_new = postmean(g_hat, g_bar, n, d_old, t2)
-        sum2 = ((sdat - np.dot(g_new.reshape((g_new.shape[0], 1)), np.ones((1, sdat.shape[1])))) ** 2).sum(axis=1)
+        sum2 = ((sdat - np.dot(g_new.values.reshape((g_new.shape[0], 1)), np.ones((1, sdat.shape[1])))) ** 2).sum(axis=1)
         d_new = postvar(sum2, n, a, b)
        
         change = max((abs(g_new - g_old) / g_old).max(), (abs(d_new - d_old) / d_old).max())
@@ -222,12 +222,11 @@ if __name__ == "__main__":
     mod = patsy.dmatrix("~ age + cancer", pheno, return_type="dataframe")
     import time
     t = time.time()
-    ebat = combat(dat, pheno.batch, mod, "age")
+    ebat = combat(dat, pheno['batch'], mod, "age")
     sys.stdout.write("%.2f seconds\n" % (time.time() - t))
 
-    sys.stdout.write(str(ebat.ix[:5, :5]))
+    sys.stdout.write(str(ebat.iloc[:5, :5]))
 
     ebat.to_csv("py-batch.txt", sep="\t")
 
-    mod = False
-    ebat = combat(dat, pheno.batch, mod)
+    ebat = combat(dat, pheno['batch'], None)
