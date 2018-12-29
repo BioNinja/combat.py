@@ -84,6 +84,9 @@ def combat(data, batch, model=None, numerical_covariates=None):
             for c in numerical_covariates if not c in drop_cols]
 
     design = design_mat(model, numerical_covariates, batch_levels)
+    # remove genes with all zeros, if not, corrected dataframe will be all NAs. 
+    sys.stderr.write("Preprocessing Data across genes.\n")
+    data = data[data.sum(axis=1) > 0 ]
 
     sys.stderr.write("Standardizing Data across genes.\n")
     B_hat = np.dot(np.dot(la.inv(np.dot(design.T, design)), design.T), data.T)
